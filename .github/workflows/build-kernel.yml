@@ -1,46 +1,62 @@
-name: Build Kernel with ROCm LLVM
+name: Build Kernel with Latest AOMP (AMD LLVM)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - name: Install base dependencies and add ROCm repo
+      # Освобождаем место
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/az /opt/hostedtoolcache
+          sudo docker system prune -af || true
+          sudo apt-get clean
+          df -h /
+
+      # Базовые зависимости
+      - name: Install kernel build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget gnupg2 software-properties-common
-          wget -q -O - https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add -
-          echo "deb [arch=amd64] https://repo.radeon.com/rocm/apt/latest ubuntu main" | sudo tee /etc/apt/sources.list.d/rocm.list
-          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev binutils fakeroot debhelper libdw-dev wget
 
-      - name: Install ROCm LLVM and kernel build deps
+      # Установка AOMP (самый свежий LLVM/Clang от AMD)
+      - name: Install latest AOMP (LLVM/Clang from AMD)
         run: |
-          sudo apt-get install -y rocm-llvm-alt build-essential libncurses-dev bison flex libssl-dev libelf-dev binutils fakeroot debhelper libdw-dev
+          wget https://github.com/ROCm/aomp/releases/download/rel_23.0-0/aomp_23.0-0_amd64.tar.gz
+          sudo tar -xzf aomp_23.0-0_amd64.tar.gz -C /opt
+          echo "/opt/aomp/bin" >> $GITHUB_PATH
+          /opt/aomp/bin/clang --version
 
+      # Клонирование ядра
       - name: Clone kernel source
         run: git clone --depth=1 -b 7.0/cachy https://github.com/YaroslavZ-ru/linux.git
 
+      # Конфигурация
       - name: Configure kernel
         run: make -C linux x86_64_defconfig
 
-      - name: Build kernel with ROCm Clang
+      # Сборка с использованием AOMP Clang/LLVM
+      - name: Build kernel packages with AOMP
         run: |
           cd linux
-          # Добавляем путь к ROCm LLVM в PATH
-          export PATH=/opt/rocm/llvm/bin:$PATH
+          export PATH=/opt/aomp/bin:$PATH
           export CC=clang
           export LD=ld.lld
           make LLVM=1 -j$(nproc) bindeb-pkg
 
+      # Установка debtap (вручную, без make)
       - name: Install debtap
         run: |
           git clone https://aur.archlinux.org/debtap.git
           cd debtap
-          sudo make install
+          sudo install -Dm755 debtap /usr/local/bin/debtap
+          sudo install -Dm644 debtap.bash_completion /usr/share/bash-completion/completions/debtap 2>/dev/null || true
+          # Обновляем базу данных debtap (неинтерактивно)
           yes | sudo debtap -u
 
+      # Конвертация .deb в .pkg.tar.zst
       - name: Convert to Arch Linux packages
         run: |
           mkdir arch_packages
@@ -48,10 +64,11 @@ jobs:
             echo "Converting $deb ..."
             sudo debtap -q "$deb"
           done
-          mv *.pkg.tar.zst arch_packages/
+          mv *.pkg.tar.zst arch_packages/ 2>/dev/null || true
 
+      # Выгрузка артефактов
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cachyos-kernel-rocm-llvm
+          name: cachyos-kernel-latest-aomp
           path: arch_packages/*.pkg.tar.zst
