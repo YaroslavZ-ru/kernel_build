@@ -15,6 +15,9 @@ jobs:
       - name: Clone kernel source
         run: git clone --depth=1 -b 7.0/cachy https://github.com/YaroslavZ-ru/linux.git
 
+      - name: Configure kernel
+        run: make -C linux x86_64_defconfig
+
       - name: Build kernel packages
         run: |
           cd linux
@@ -25,7 +28,6 @@ jobs:
           git clone https://aur.archlinux.org/debtap.git
           cd debtap
           sudo make install
-          # Неинтерактивное обновление базы
           yes | sudo debtap -u
 
       - name: Convert to Arch Linux packages
