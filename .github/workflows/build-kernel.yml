@@ -1,0 +1,55 @@
+name: Build Kernel for Cachy OS (branch 7.0/cachy)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Максимально увеличиваем дисковое пространство
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 512
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev pkgfile binutils fakeroot
+
+      - name: Clone kernel source
+        run: git clone --depth=1 -b 7.0/cachy https://github.com/YaroslavZ-ru/linux.git
+
+      - name: Build kernel packages
+        run: |
+          cd linux
+          make -j$(nproc) bindeb-pkg
+
+      - name: Install debtap
+        run: |
+          git clone https://aur.archlinux.org/debtap.git
+          cd debtap
+          sudo make install
+          # Неинтерактивное обновление базы
+          yes | sudo debtap -u
+
+      - name: Convert to Arch Linux packages
+        run: |
+          mkdir arch_packages
+          for deb in *.deb; do
+            echo "Converting $deb ..."
+            sudo debtap -q "$deb"
+          done
+          mv *.pkg.tar.zst arch_packages/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cachyos-kernel-packages
+          path: arch_packages/*.pkg.tar.zst
