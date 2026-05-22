@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev binutils fakeroot
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev binutils fakeroot debhelper libdw-dev
 
       - name: Clone kernel source
         run: git clone --depth=1 -b 7.0/cachy https://github.com/YaroslavZ-ru/linux.git
