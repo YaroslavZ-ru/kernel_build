@@ -1,4 +1,4 @@
-name: Build Kernel for Cachy OS (branch 7.0/cachy)
+name: Build Kernel with ROCm LLVM
 
 on:
   workflow_dispatch:
@@ -7,10 +7,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Install dependencies
+      - name: Install base dependencies and add ROCm repo
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev binutils fakeroot debhelper libdw-dev
+          sudo apt-get install -y wget gnupg2 software-properties-common
+          wget -q -O - https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add -
+          echo "deb [arch=amd64] https://repo.radeon.com/rocm/apt/latest ubuntu main" | sudo tee /etc/apt/sources.list.d/rocm.list
+          sudo apt-get update
+
+      - name: Install ROCm LLVM and kernel build deps
+        run: |
+          sudo apt-get install -y rocm-llvm-alt build-essential libncurses-dev bison flex libssl-dev libelf-dev binutils fakeroot debhelper libdw-dev
 
       - name: Clone kernel source
         run: git clone --depth=1 -b 7.0/cachy https://github.com/YaroslavZ-ru/linux.git
@@ -18,10 +25,14 @@ jobs:
       - name: Configure kernel
         run: make -C linux x86_64_defconfig
 
-      - name: Build kernel packages
+      - name: Build kernel with ROCm Clang
         run: |
           cd linux
-          make -j$(nproc) bindeb-pkg
+          # Добавляем путь к ROCm LLVM в PATH
+          export PATH=/opt/rocm/llvm/bin:$PATH
+          export CC=clang
+          export LD=ld.lld
+          make LLVM=1 -j$(nproc) bindeb-pkg
 
       - name: Install debtap
         run: |
@@ -42,5 +53,5 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cachyos-kernel-packages
+          name: cachyos-kernel-rocm-llvm
           path: arch_packages/*.pkg.tar.zst
