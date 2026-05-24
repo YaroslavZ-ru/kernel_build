@@ -19,11 +19,11 @@ jobs:
           repository: CachyOS/linux-cachyos
           path: src
 
-      - name: Setup build user
+      - name: Setup build user & permissions
         run: |
           useradd -m builduser
           echo 'builduser ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builduser
-          chown -R builduser:builduser $GITHUB_WORKSPACE
+          chown -R builduser:builduser "$GITHUB_WORKSPACE"
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -33,8 +33,8 @@ jobs:
 
       - name: Build
         run: |
-          su - builduser -c "
-            cd '${{ github.workspace }}/src' && \
+          sudo -u builduser -H bash -c "
+            cd '$GITHUB_WORKSPACE/src' && \
             export MAKEFLAGS='-j\$(nproc)' && \
             export CCACHE_DIR=/home/builduser/.cache/ccache && \
             makepkg -s --noconfirm --skippgpcheck --noprogressbar
@@ -45,4 +45,3 @@ jobs:
         with:
           name: linux-cachyos-pkgs
           path: src/*.pkg.tar.zst
-
