@@ -7,11 +7,11 @@ jobs:
     container:
       image: archlinux:latest
     steps:
-      - name: Setup Arch environment
+      - name: Init keyring & install deps
         run: |
-          pacman -Sy --noconfirm archlinux-keyring
-          pacman-key --init && pacman-key --populate archlinux
-          pacman -S --noconfirm base-devel git ccache fakeroot ncurses bison flex kmod libelf elfutils
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Sy --noconfirm archlinux-keyring base-devel git ccache ncurses bison flex kmod libelf elfutils sudo
 
       - name: Checkout source
         uses: actions/checkout@v4
@@ -19,20 +19,26 @@ jobs:
           repository: CachyOS/linux-cachyos
           path: src
 
+      - name: Setup build user
+        run: |
+          useradd -m builduser
+          echo 'builduser ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builduser
+          chown -R builduser:builduser $GITHUB_WORKSPACE
+
       - name: Cache ccache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/ccache
+          path: /home/builduser/.cache/ccache
           key: ccache-${{ hashFiles('src/PKGBUILD') }}
 
-      - name: Configure makepkg
-        run: |
-          echo 'MAKEFLAGS="-j$(nproc)"' >> /etc/makepkg.conf
-          echo 'BUILDENV=(fakeroot !distcc color ccache !check !sign)' >> /etc/makepkg.conf
-
       - name: Build
-        working-directory: src
-        run: makepkg -s --noconfirm --skippgpcheck
+        run: |
+          su - builduser -c "
+            export MAKEFLAGS='-j\$(nproc)'
+            export CCACHE_DIR=\$HOME/.cache/ccache
+            cd src
+            makepkg -s --noconfirm --skippgpcheck --noprogressbar
+          "
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
