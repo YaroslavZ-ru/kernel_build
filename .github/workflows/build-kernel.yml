@@ -34,9 +34,9 @@ jobs:
       - name: Build
         run: |
           su - builduser -c "
-            export MAKEFLAGS='-j\$(nproc)'
-            export CCACHE_DIR=\$HOME/.cache/ccache
-            cd src
+            cd '${{ github.workspace }}/src' && \
+            export MAKEFLAGS='-j\$(nproc)' && \
+            export CCACHE_DIR=/home/builduser/.cache/ccache && \
             makepkg -s --noconfirm --skippgpcheck --noprogressbar
           "
 
@@ -45,3 +45,4 @@ jobs:
         with:
           name: linux-cachyos-pkgs
           path: src/*.pkg.tar.zst
+
