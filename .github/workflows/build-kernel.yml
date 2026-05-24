@@ -1,73 +1,41 @@
-name: Build Kernel with AMD AOCC 5.2.0
-
-on:
-  workflow_dispatch:
+name: Build CachyOS Kernel
+on: workflow_dispatch
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
     steps:
-      # 1. Установка базовых зависимостей для сборки ядра
-      - name: Install kernel build dependencies
+      - name: Setup Arch environment
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev binutils fakeroot debhelper libdw-dev wget
+          pacman -Sy --noconfirm archlinux-keyring
+          pacman-key --init && pacman-key --populate archlinux
+          pacman -S --noconfirm base-devel git ccache fakeroot ncurses bison flex kmod libelf elfutils
 
-      # 2. Скачивание и установка AOCC 5.2.0 с сайта AMD
-      - name: Download and install AOCC 5.2.0
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          repository: CachyOS/linux-cachyos
+          path: src
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ hashFiles('src/PKGBUILD') }}
+
+      - name: Configure makepkg
         run: |
-          # Прямая ссылка на архив с компилятором
-          wget https://download.amd.com/developer/eula/aocc/aocc-5-2/aocc-compiler-5.2.0.tar
-          # Создаём директорию для установки
-          mkdir -p /opt/AMD
-          # Распаковываем архив в созданную директорию
-          sudo tar -xf aocc-compiler-5.2.0.tar -C /opt/AMD
-          # Указываем путь к бинарным файлам компилятора
-          echo "/opt/AMD/aocc-compiler-5.2.0/bin" >> $GITHUB_PATH
-          # Проверяем установку, выводя версию компилятора
-          /opt/AMD/aocc-compiler-5.2.0/bin/clang --version
+          echo 'MAKEFLAGS="-j$(nproc)"' >> /etc/makepkg.conf
+          echo 'BUILDENV=(fakeroot !distcc color ccache !check !sign)' >> /etc/makepkg.conf
 
-      # 3. Клонирование репозитория с исходным кодом ядра
-      - name: Clone kernel source
-        run: git clone --depth=1 -b 7.0/cachy https://github.com/YaroslavZ-ru/linux.git
+      - name: Build
+        working-directory: src
+        run: makepkg -s --noconfirm --skippgpcheck
 
-      # 4. Конфигурация ядра
-      - name: Configure kernel
-        run: make -C linux x86_64_defconfig
-
-      # 5. Сборка ядра с использованием AOCC 5.2.0
-      - name: Build kernel packages with AOCC 5.2.0
-        run: |
-          cd linux
-          # Убеждаемся, что используется наш компилятор
-          export PATH=/opt/AMD/aocc-compiler-5.2.0/bin:$PATH
-          export CC=clang
-          export LD=ld.lld
-          # Флаг LLVM=1 гарантирует использование всех инструментов от LLVM
-          make LLVM=1 -j$(nproc) bindeb-pkg
-
-      # 6. Установка утилиты debtap для конвертации пакетов
-      - name: Install debtap
-        run: |
-          git clone https://aur.archlinux.org/debtap.git
-          cd debtap
-          sudo install -Dm755 debtap /usr/local/bin/debtap
-          sudo install -Dm644 debtap.bash_completion /usr/share/bash-completion/completions/debtap 2>/dev/null || true
-          yes | sudo debtap -u
-
-      # 7. Конвертация .deb пакетов в формат Arch Linux (.pkg.tar.zst)
-      - name: Convert to Arch Linux packages
-        run: |
-          mkdir arch_packages
-          for deb in *.deb; do
-            echo "Converting $deb ..."
-            sudo debtap -q "$deb"
-          done
-          mv *.pkg.tar.zst arch_packages/ 2>/dev/null || true
-
-      # 8. Сохранение итоговых пакетов как артефакта сборки
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cachyos-kernel-aocc-5.2.0
-          path: arch_packages/*.pkg.tar.zst
+          name: linux-cachyos-pkgs
+          path: src/*.pkg.tar.zst
